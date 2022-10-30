@@ -21,7 +21,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import com.airbnb.mvrx.Success
@@ -34,14 +33,21 @@ import im.vector.app.core.dialogs.ManuallyVerifyDialog
 import im.vector.app.core.platform.VectorBaseFragment
 import im.vector.app.core.resources.ColorProvider
 import im.vector.app.core.resources.DrawableProvider
+import im.vector.app.core.resources.StringProvider
 import im.vector.app.databinding.FragmentSettingsDevicesBinding
+import im.vector.app.features.VectorFeatures
 import im.vector.app.features.crypto.recover.SetupMode
 import im.vector.app.features.crypto.verification.VerificationBottomSheet
+import im.vector.app.features.login.qr.QrCodeLoginArgs
+import im.vector.app.features.login.qr.QrCodeLoginType
+import im.vector.app.features.settings.devices.v2.filter.DeviceManagerFilterType
 import im.vector.app.features.settings.devices.v2.list.NUMBER_OF_OTHER_DEVICES_TO_RENDER
 import im.vector.app.features.settings.devices.v2.list.OtherSessionsView
 import im.vector.app.features.settings.devices.v2.list.SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS
+import im.vector.app.features.settings.devices.v2.list.SecurityRecommendationView
 import im.vector.app.features.settings.devices.v2.list.SecurityRecommendationViewState
 import im.vector.app.features.settings.devices.v2.list.SessionInfoViewState
+import org.matrix.android.sdk.api.session.crypto.model.RoomEncryptionTrustLevel
 import javax.inject.Inject
 
 /**
@@ -59,6 +65,10 @@ class VectorSettingsDevicesFragment :
     @Inject lateinit var drawableProvider: DrawableProvider
 
     @Inject lateinit var colorProvider: ColorProvider
+
+    @Inject lateinit var vectorFeatures: VectorFeatures
+
+    @Inject lateinit var stringProvider: StringProvider
 
     private val viewModel: DevicesViewModel by fragmentViewModel()
 
@@ -80,9 +90,10 @@ class VectorSettingsDevicesFragment :
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        initLearnMoreButtons()
         initWaitingView()
         initOtherSessionsView()
+        initSecurityRecommendationsView()
+        initQrLoginView()
         observeViewEvents()
     }
 
@@ -101,8 +112,7 @@ class VectorSettingsDevicesFragment :
                     ).show(childFragmentManager, "REQPOP")
                 }
                 is DevicesViewEvent.SelfVerification -> {
-                    VerificationBottomSheet.forSelfVerification(it.session)
-                            .show(childFragmentManager, "REQPOP")
+                    navigator.requestSelfSessionVerification(requireActivity())
                 }
                 is DevicesViewEvent.ShowManuallyVerify -> {
                     ManuallyVerifyDialog.show(requireActivity(), it.cryptoDeviceInfo) {
@@ -125,15 +135,64 @@ class VectorSettingsDevicesFragment :
         views.deviceListOtherSessions.callback = this
     }
 
+    private fun initSecurityRecommendationsView() {
+        views.deviceListUnverifiedSessionsRecommendation.callback = object : SecurityRecommendationView.Callback {
+            override fun onViewAllClicked() {
+                viewNavigator.navigateToOtherSessions(
+                        requireActivity(),
+                        R.string.device_manager_header_section_security_recommendations_title,
+                        DeviceManagerFilterType.UNVERIFIED,
+                        excludeCurrentDevice = false
+                )
+            }
+        }
+        views.deviceListInactiveSessionsRecommendation.callback = object : SecurityRecommendationView.Callback {
+            override fun onViewAllClicked() {
+                viewNavigator.navigateToOtherSessions(
+                        requireActivity(),
+                        R.string.device_manager_header_section_security_recommendations_title,
+                        DeviceManagerFilterType.INACTIVE,
+                        excludeCurrentDevice = false
+                )
+            }
+        }
+    }
+
+    private fun initQrLoginView() {
+        if (!vectorFeatures.isReciprocateQrCodeLogin()) {
+            views.deviceListHeaderSignInWithQrCode.isVisible = false
+            views.deviceListHeaderScanQrCodeButton.isVisible = false
+            views.deviceListHeaderShowQrCodeButton.isVisible = false
+            return
+        }
+
+        views.deviceListHeaderSignInWithQrCode.isVisible = true
+        views.deviceListHeaderScanQrCodeButton.isVisible = true
+        views.deviceListHeaderShowQrCodeButton.isVisible = true
+
+        views.deviceListHeaderScanQrCodeButton.debouncedClicks {
+            navigateToQrCodeScreen(showQrCodeImmediately = false)
+        }
+
+        views.deviceListHeaderShowQrCodeButton.debouncedClicks {
+            navigateToQrCodeScreen(showQrCodeImmediately = true)
+        }
+    }
+
+    private fun navigateToQrCodeScreen(showQrCodeImmediately: Boolean) {
+        navigator
+                .openLoginWithQrCode(
+                        requireActivity(),
+                        QrCodeLoginArgs(
+                                loginType = QrCodeLoginType.LINK_A_DEVICE,
+                                showQrCodeImmediately = showQrCodeImmediately,
+                        )
+                )
+    }
+
     override fun onDestroyView() {
         cleanUpLearnMoreButtonsListeners()
         super.onDestroyView()
-    }
-
-    private fun initLearnMoreButtons() {
-        views.deviceListHeaderOtherSessions.onLearnMoreClickListener = {
-            Toast.makeText(context, "Learn more other", Toast.LENGTH_LONG).show()
-        }
     }
 
     private fun cleanUpLearnMoreButtonsListeners() {
@@ -144,12 +203,11 @@ class VectorSettingsDevicesFragment :
         if (state.devices is Success) {
             val devices = state.devices()
             val currentDeviceId = state.currentSessionCrossSigningInfo.deviceId
-            val currentDeviceInfo = devices?.firstOrNull {
-                it.deviceInfo.deviceId == currentDeviceId
-            }
+            val currentDeviceInfo = devices?.firstOrNull { it.deviceInfo.deviceId == currentDeviceId }
+            val isCurrentSessionVerified = currentDeviceInfo?.roomEncryptionTrustLevel == RoomEncryptionTrustLevel.Trusted
             val otherDevices = devices?.filter { it.deviceInfo.deviceId != currentDeviceId }
 
-            renderSecurityRecommendations(state.inactiveSessionsCount, state.unverifiedSessionsCount)
+            renderSecurityRecommendations(state.inactiveSessionsCount, state.unverifiedSessionsCount, isCurrentSessionVerified)
             renderCurrentDevice(currentDeviceInfo)
             renderOtherSessionsView(otherDevices)
         } else {
@@ -161,14 +219,21 @@ class VectorSettingsDevicesFragment :
         handleLoadingStatus(state.isLoading)
     }
 
-    private fun renderSecurityRecommendations(inactiveSessionsCount: Int, unverifiedSessionsCount: Int) {
-        if (unverifiedSessionsCount == 0 && inactiveSessionsCount == 0) {
+    private fun renderSecurityRecommendations(
+            inactiveSessionsCount: Int,
+            unverifiedSessionsCount: Int,
+            isCurrentSessionVerified: Boolean,
+    ) {
+        val isUnverifiedSectionVisible = unverifiedSessionsCount > 0 && isCurrentSessionVerified
+        val isInactiveSectionVisible = inactiveSessionsCount > 0
+        if (isUnverifiedSectionVisible.not() && isInactiveSectionVisible.not()) {
             hideSecurityRecommendations()
         } else {
             views.deviceListHeaderSectionSecurityRecommendations.isVisible = true
             views.deviceListSecurityRecommendationsDivider.isVisible = true
-            views.deviceListUnverifiedSessionsRecommendation.isVisible = unverifiedSessionsCount > 0
-            views.deviceListInactiveSessionsRecommendation.isVisible = inactiveSessionsCount > 0
+
+            views.deviceListUnverifiedSessionsRecommendation.isVisible = isUnverifiedSectionVisible
+            views.deviceListInactiveSessionsRecommendation.isVisible = isInactiveSectionVisible
             val unverifiedSessionsViewState = SecurityRecommendationViewState(
                     description = getString(R.string.device_manager_unverified_sessions_description),
                     sessionsCount = unverifiedSessionsCount,
@@ -186,11 +251,19 @@ class VectorSettingsDevicesFragment :
         }
     }
 
+    private fun hideUnverifiedSessionsRecommendation() {
+        views.deviceListUnverifiedSessionsRecommendation.isVisible = false
+    }
+
+    private fun hideInactiveSessionsRecommendation() {
+        views.deviceListInactiveSessionsRecommendation.isVisible = false
+    }
+
     private fun hideSecurityRecommendations() {
         views.deviceListHeaderSectionSecurityRecommendations.isVisible = false
-        views.deviceListUnverifiedSessionsRecommendation.isVisible = false
-        views.deviceListInactiveSessionsRecommendation.isVisible = false
         views.deviceListSecurityRecommendationsDivider.isVisible = false
+        hideUnverifiedSessionsRecommendation()
+        hideInactiveSessionsRecommendation()
     }
 
     private fun renderOtherSessionsView(otherDevices: List<DeviceFullInfo>?) {
@@ -220,12 +293,15 @@ class VectorSettingsDevicesFragment :
                     isCurrentSession = true,
                     deviceFullInfo = it
             )
-            views.deviceListCurrentSession.render(viewState, dateFormatter, drawableProvider, colorProvider)
+            views.deviceListCurrentSession.render(viewState, dateFormatter, drawableProvider, colorProvider, stringProvider)
             views.deviceListCurrentSession.debouncedClicks {
                 currentDeviceInfo.deviceInfo.deviceId?.let { deviceId -> navigateToSessionOverview(deviceId) }
             }
             views.deviceListCurrentSession.viewDetailsButton.debouncedClicks {
                 currentDeviceInfo.deviceInfo.deviceId?.let { deviceId -> navigateToSessionOverview(deviceId) }
+            }
+            views.deviceListCurrentSession.viewVerifyButton.debouncedClicks {
+                viewModel.handle(DevicesAction.VerifyCurrentSession)
             }
         } ?: run {
             hideCurrentSessionView()
@@ -255,11 +331,20 @@ class VectorSettingsDevicesFragment :
         views.waitingView.root.isVisible = isLoading
     }
 
+    override fun onOtherSessionLongClicked(deviceId: String) {
+        // do nothing
+    }
+
     override fun onOtherSessionClicked(deviceId: String) {
         navigateToSessionOverview(deviceId)
     }
 
     override fun onViewAllOtherSessionsClicked() {
-        viewNavigator.navigateToOtherSessions(requireActivity())
+        viewNavigator.navigateToOtherSessions(
+                context = requireActivity(),
+                titleResourceId = R.string.device_manager_sessions_other_title,
+                defaultFilter = DeviceManagerFilterType.ALL_SESSIONS,
+                excludeCurrentDevice = true
+        )
     }
 }

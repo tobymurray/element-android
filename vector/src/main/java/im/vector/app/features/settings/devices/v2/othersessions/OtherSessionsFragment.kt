@@ -18,10 +18,16 @@ package im.vector.app.features.settings.devices.v2.othersessions
 
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.addCallback
+import androidx.annotation.StringRes
 import androidx.core.view.isVisible
 import com.airbnb.mvrx.Success
+import com.airbnb.mvrx.args
 import com.airbnb.mvrx.fragmentViewModel
 import com.airbnb.mvrx.withState
 import dagger.hilt.android.AndroidEntryPoint
@@ -29,25 +35,33 @@ import im.vector.app.R
 import im.vector.app.core.platform.VectorBaseBottomSheetDialogFragment
 import im.vector.app.core.platform.VectorBaseBottomSheetDialogFragment.ResultListener.Companion.RESULT_OK
 import im.vector.app.core.platform.VectorBaseFragment
+import im.vector.app.core.platform.VectorMenuProvider
 import im.vector.app.core.resources.ColorProvider
+import im.vector.app.core.resources.StringProvider
 import im.vector.app.databinding.FragmentOtherSessionsBinding
 import im.vector.app.features.settings.devices.v2.DeviceFullInfo
 import im.vector.app.features.settings.devices.v2.filter.DeviceManagerFilterBottomSheet
 import im.vector.app.features.settings.devices.v2.filter.DeviceManagerFilterType
 import im.vector.app.features.settings.devices.v2.list.OtherSessionsView
 import im.vector.app.features.settings.devices.v2.list.SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS
+import im.vector.app.features.settings.devices.v2.more.SessionLearnMoreBottomSheet
 import im.vector.app.features.themes.ThemeUtils
+import org.matrix.android.sdk.api.extensions.orFalse
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class OtherSessionsFragment :
         VectorBaseFragment<FragmentOtherSessionsBinding>(),
         VectorBaseBottomSheetDialogFragment.ResultListener,
-        OtherSessionsView.Callback {
+        OtherSessionsView.Callback,
+        VectorMenuProvider {
 
     private val viewModel: OtherSessionsViewModel by fragmentViewModel()
+    private val args: OtherSessionsArgs by args()
 
     @Inject lateinit var colorProvider: ColorProvider
+
+    @Inject lateinit var stringProvider: StringProvider
 
     @Inject lateinit var viewNavigator: OtherSessionsViewNavigator
 
@@ -55,9 +69,59 @@ class OtherSessionsFragment :
         return FragmentOtherSessionsBinding.inflate(layoutInflater, container, false)
     }
 
+    override fun getMenuRes() = R.menu.menu_other_sessions
+
+    override fun handlePrepareMenu(menu: Menu) {
+        withState(viewModel) { state ->
+            val isSelectModeEnabled = state.isSelectModeEnabled
+            menu.findItem(R.id.otherSessionsSelectAll).isVisible = isSelectModeEnabled
+            menu.findItem(R.id.otherSessionsDeselectAll).isVisible = isSelectModeEnabled
+            menu.findItem(R.id.otherSessionsSelect).isVisible = !isSelectModeEnabled && state.devices()?.isNotEmpty().orFalse()
+        }
+    }
+
+    override fun handleMenuItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.otherSessionsSelect -> {
+                enableSelectMode(true)
+                true
+            }
+            R.id.otherSessionsSelectAll -> {
+                viewModel.handle(OtherSessionsAction.SelectAll)
+                true
+            }
+            R.id.otherSessionsDeselectAll -> {
+                viewModel.handle(OtherSessionsAction.DeselectAll)
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun enableSelectMode(isEnabled: Boolean, deviceId: String? = null) {
+        val action = if (isEnabled) OtherSessionsAction.EnableSelectMode(deviceId) else OtherSessionsAction.DisableSelectMode
+        viewModel.handle(action)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        activity?.onBackPressedDispatcher?.addCallback(owner = this) {
+            handleBackPress(this)
+        }
+    }
+
+    private fun handleBackPress(onBackPressedCallback: OnBackPressedCallback) = withState(viewModel) { state ->
+        if (state.isSelectModeEnabled) {
+            enableSelectMode(false)
+        } else {
+            onBackPressedCallback.isEnabled = false
+            activity?.onBackPressedDispatcher?.onBackPressed()
+        }
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        setupToolbar(views.otherSessionsToolbar).allowBack()
+        setupToolbar(views.otherSessionsToolbar).setTitle(args.titleResourceId).allowBack()
         observeViewEvents()
         initFilterView()
     }
@@ -85,6 +149,10 @@ class OtherSessionsFragment :
         }
 
         views.deviceListOtherSessions.callback = this
+
+        if (args.defaultFilter != DeviceManagerFilterType.ALL_SESSIONS) {
+            viewModel.handle(OtherSessionsAction.FilterDevices(args.defaultFilter))
+        }
     }
 
     override fun onBottomSheetResult(resultCode: Int, data: Any?) {
@@ -95,11 +163,24 @@ class OtherSessionsFragment :
 
     override fun invalidate() = withState(viewModel) { state ->
         if (state.devices is Success) {
-            renderDevices(state.devices(), state.currentFilter)
+            val devices = state.devices.invoke()
+            renderDevices(devices, state.currentFilter)
+            updateToolbar(devices, state.isSelectModeEnabled)
         }
     }
 
-    private fun renderDevices(devices: List<DeviceFullInfo>?, currentFilter: DeviceManagerFilterType) {
+    private fun updateToolbar(devices: List<DeviceFullInfo>, isSelectModeEnabled: Boolean) {
+        invalidateOptionsMenu()
+        val title = if (isSelectModeEnabled) {
+            val selection = devices.count { it.isSelected }
+            stringProvider.getQuantityString(R.plurals.x_selected, selection, selection)
+        } else {
+            getString(args.titleResourceId)
+        }
+        toolbar?.title = title
+    }
+
+    private fun renderDevices(devices: List<DeviceFullInfo>, currentFilter: DeviceManagerFilterType) {
         views.otherSessionsFilterBadgeImageView.isVisible = currentFilter != DeviceManagerFilterType.ALL_SESSIONS
         views.otherSessionsSecurityRecommendationView.isVisible = currentFilter != DeviceManagerFilterType.ALL_SESSIONS
         views.deviceListHeaderOtherSessions.isVisible = currentFilter == DeviceManagerFilterType.ALL_SESSIONS
@@ -115,6 +196,7 @@ class OtherSessionsFragment :
                         )
                 )
                 views.otherSessionsNotFoundTextView.text = getString(R.string.device_manager_other_sessions_no_verified_sessions_found)
+                updateSecurityLearnMoreButton(R.string.device_manager_learn_more_sessions_verified_title, R.string.device_manager_learn_more_sessions_verified)
             }
             DeviceManagerFilterType.UNVERIFIED -> {
                 views.otherSessionsSecurityRecommendationView.render(
@@ -126,6 +208,10 @@ class OtherSessionsFragment :
                         )
                 )
                 views.otherSessionsNotFoundTextView.text = getString(R.string.device_manager_other_sessions_no_unverified_sessions_found)
+                updateSecurityLearnMoreButton(
+                        R.string.device_manager_learn_more_sessions_unverified_title,
+                        R.string.device_manager_learn_more_sessions_unverified
+                )
             }
             DeviceManagerFilterType.INACTIVE -> {
                 views.otherSessionsSecurityRecommendationView.render(
@@ -141,11 +227,13 @@ class OtherSessionsFragment :
                         )
                 )
                 views.otherSessionsNotFoundTextView.text = getString(R.string.device_manager_other_sessions_no_inactive_sessions_found)
+                updateSecurityLearnMoreButton(R.string.device_manager_learn_more_sessions_inactive_title, R.string.device_manager_learn_more_sessions_inactive)
             }
-            DeviceManagerFilterType.ALL_SESSIONS -> { /* NOOP. View is not visible */ }
+            DeviceManagerFilterType.ALL_SESSIONS -> { /* NOOP. View is not visible */
+            }
         }
 
-        if (devices.isNullOrEmpty()) {
+        if (devices.isEmpty()) {
             views.deviceListOtherSessions.isVisible = false
             views.otherSessionsNotFoundLayout.isVisible = true
         } else {
@@ -155,11 +243,41 @@ class OtherSessionsFragment :
         }
     }
 
-    override fun onOtherSessionClicked(deviceId: String) {
-        viewNavigator.navigateToSessionOverview(
-                context = requireActivity(),
-                deviceId = deviceId
+    private fun updateSecurityLearnMoreButton(
+            @StringRes titleResId: Int,
+            @StringRes descriptionResId: Int,
+    ) {
+        views.otherSessionsSecurityRecommendationView.onLearnMoreClickListener = {
+            showLearnMoreInfo(titleResId, getString(descriptionResId))
+        }
+    }
+
+    private fun showLearnMoreInfo(
+            @StringRes titleResId: Int,
+            description: String,
+    ) {
+        val args = SessionLearnMoreBottomSheet.Args(
+                title = getString(titleResId),
+                description = description,
         )
+        SessionLearnMoreBottomSheet.show(childFragmentManager, args)
+    }
+
+    override fun onOtherSessionLongClicked(deviceId: String) = withState(viewModel) { state ->
+        if (!state.isSelectModeEnabled) {
+            enableSelectMode(true, deviceId)
+        }
+    }
+
+    override fun onOtherSessionClicked(deviceId: String) = withState(viewModel) { state ->
+        if (state.isSelectModeEnabled) {
+            viewModel.handle(OtherSessionsAction.ToggleSelectionForDevice(deviceId))
+        } else {
+            viewNavigator.navigateToSessionOverview(
+                    context = requireActivity(),
+                    deviceId = deviceId
+            )
+        }
     }
 
     override fun onViewAllOtherSessionsClicked() {

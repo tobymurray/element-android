@@ -28,6 +28,7 @@ import im.vector.app.core.extensions.setTextOrHide
 import im.vector.app.core.extensions.setTextWithColoredPart
 import im.vector.app.core.resources.ColorProvider
 import im.vector.app.core.resources.DrawableProvider
+import im.vector.app.core.resources.StringProvider
 import im.vector.app.databinding.ViewSessionInfoBinding
 import im.vector.app.features.themes.ThemeUtils
 import org.matrix.android.sdk.api.session.crypto.model.DeviceInfo
@@ -49,18 +50,27 @@ class SessionInfoView @JvmOverloads constructor(
     }
 
     val viewDetailsButton = views.sessionInfoViewDetailsButton
+    val viewVerifyButton = views.sessionInfoVerifySessionButton
+
+    private val setDeviceTypeIconUseCase = SetDeviceTypeIconUseCase()
 
     fun render(
             sessionInfoViewState: SessionInfoViewState,
             dateFormatter: VectorDateFormatter,
             drawableProvider: DrawableProvider,
             colorProvider: ColorProvider,
+            stringProvider: StringProvider,
     ) {
-        renderDeviceInfo(sessionInfoViewState.deviceFullInfo.deviceInfo.displayName.orEmpty())
+        renderDeviceInfo(
+                sessionInfoViewState.deviceFullInfo.deviceInfo.displayName.orEmpty(),
+                sessionInfoViewState.deviceFullInfo.deviceExtendedInfo.deviceType,
+                stringProvider,
+        )
         renderVerificationStatus(
                 sessionInfoViewState.deviceFullInfo.roomEncryptionTrustLevel,
                 sessionInfoViewState.isCurrentSession,
                 sessionInfoViewState.isLearnMoreLinkVisible,
+                sessionInfoViewState.isVerifyButtonVisible,
         )
         renderDeviceLastSeenDetails(
                 sessionInfoViewState.deviceFullInfo.isInactive,
@@ -77,12 +87,13 @@ class SessionInfoView @JvmOverloads constructor(
             encryptionTrustLevel: RoomEncryptionTrustLevel,
             isCurrentSession: Boolean,
             hasLearnMoreLink: Boolean,
+            isVerifyButtonVisible: Boolean,
     ) {
         views.sessionInfoVerificationStatusImageView.render(encryptionTrustLevel)
-        if (encryptionTrustLevel == RoomEncryptionTrustLevel.Trusted) {
-            renderCrossSigningVerified(isCurrentSession)
-        } else {
-            renderCrossSigningUnverified(isCurrentSession)
+        when {
+            encryptionTrustLevel == RoomEncryptionTrustLevel.Trusted -> renderCrossSigningVerified(isCurrentSession)
+            encryptionTrustLevel == RoomEncryptionTrustLevel.Default && !isCurrentSession -> renderCrossSigningUnknown()
+            else -> renderCrossSigningUnverified(isCurrentSession, isVerifyButtonVisible)
         }
         if (hasLearnMoreLink) {
             appendLearnMoreToVerificationStatus()
@@ -119,7 +130,7 @@ class SessionInfoView @JvmOverloads constructor(
         views.sessionInfoVerifySessionButton.isVisible = false
     }
 
-    private fun renderCrossSigningUnverified(isCurrentSession: Boolean) {
+    private fun renderCrossSigningUnverified(isCurrentSession: Boolean, isVerifyButtonVisible: Boolean) {
         views.sessionInfoVerificationStatusTextView.text = context.getString(R.string.device_manager_verification_status_unverified)
         views.sessionInfoVerificationStatusTextView.setTextColor(ThemeUtils.getColor(context, R.attr.colorError))
         val statusResId = if (isCurrentSession) {
@@ -128,13 +139,17 @@ class SessionInfoView @JvmOverloads constructor(
             R.string.device_manager_verification_status_detail_other_session_unverified
         }
         views.sessionInfoVerificationStatusDetailTextView.text = context.getString(statusResId)
-        views.sessionInfoVerifySessionButton.isVisible = true
+        views.sessionInfoVerifySessionButton.isVisible = isVerifyButtonVisible
     }
 
-    // TODO. We don't have this info yet. Update later accordingly.
-    private fun renderDeviceInfo(sessionName: String) {
-        views.sessionInfoDeviceTypeImageView.setImageResource(R.drawable.ic_device_type_mobile)
-        views.sessionInfoDeviceTypeImageView.contentDescription = context.getString(R.string.a11y_device_manager_device_type_mobile)
+    private fun renderCrossSigningUnknown() {
+        views.sessionInfoVerificationStatusTextView.text = context.getString(R.string.device_manager_verification_status_unknown)
+        views.sessionInfoVerificationStatusDetailTextView.text = context.getString(R.string.device_manager_verification_status_detail_other_session_unknown)
+        views.sessionInfoVerifySessionButton.isVisible = false
+    }
+
+    private fun renderDeviceInfo(sessionName: String, deviceType: DeviceType, stringProvider: StringProvider) {
+        setDeviceTypeIconUseCase.execute(deviceType, views.sessionInfoDeviceTypeImageView, stringProvider)
         views.sessionInfoNameTextView.text = sessionName
     }
 
@@ -146,34 +161,31 @@ class SessionInfoView @JvmOverloads constructor(
             drawableProvider: DrawableProvider,
             colorProvider: ColorProvider,
     ) {
-        deviceInfo.lastSeenTs
-                ?.takeIf { isLastSeenDetailsVisible }
-                ?.let { timestamp ->
-                    views.sessionInfoLastActivityTextView.isVisible = true
-                    views.sessionInfoLastActivityTextView.text = if (isInactive) {
-                        val formattedTs = dateFormatter.format(timestamp, DateFormatKind.TIMELINE_DAY_DIVIDER)
-                        context.resources.getQuantityString(
-                                R.plurals.device_manager_other_sessions_description_inactive,
-                                SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS,
-                                SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS,
-                                formattedTs
-                        )
-                    } else {
-                        val formattedTs = dateFormatter.format(timestamp, DateFormatKind.DEFAULT_DATE_AND_TIME)
-                        context.getString(R.string.device_manager_session_last_activity, formattedTs)
-                    }
-                    val drawable = if (isInactive) {
-                        val drawableColor = colorProvider.getColorFromAttribute(R.attr.vctr_content_secondary)
-                        drawableProvider.getDrawable(R.drawable.ic_inactive_sessions, drawableColor)
-                    } else {
-                        null
-                    }
-                    views.sessionInfoLastActivityTextView.setCompoundDrawablesWithIntrinsicBounds(drawable, null, null, null)
-                }
-                ?: run {
-                    views.sessionInfoLastActivityTextView.isGone = true
-                }
-
+        if (deviceInfo.lastSeenTs != null && isLastSeenDetailsVisible) {
+            val timestamp = deviceInfo.lastSeenTs
+            views.sessionInfoLastActivityTextView.isVisible = true
+            views.sessionInfoLastActivityTextView.text = if (isInactive) {
+                val formattedTs = dateFormatter.format(timestamp, DateFormatKind.TIMELINE_DAY_DIVIDER)
+                context.resources.getQuantityString(
+                        R.plurals.device_manager_other_sessions_description_inactive,
+                        SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS,
+                        SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS,
+                        formattedTs
+                )
+            } else {
+                val formattedTs = dateFormatter.format(timestamp, DateFormatKind.DEFAULT_DATE_AND_TIME)
+                context.getString(R.string.device_manager_session_last_activity, formattedTs)
+            }
+            val drawable = if (isInactive) {
+                val drawableColor = colorProvider.getColorFromAttribute(R.attr.vctr_content_secondary)
+                drawableProvider.getDrawable(R.drawable.ic_inactive_sessions, drawableColor)
+            } else {
+                null
+            }
+            views.sessionInfoLastActivityTextView.setCompoundDrawablesWithIntrinsicBounds(drawable, null, null, null)
+        } else {
+            views.sessionInfoLastActivityTextView.isGone = true
+        }
         views.sessionInfoLastIPAddressTextView.setTextOrHide(deviceInfo.lastSeenIp?.takeIf { isLastSeenDetailsVisible })
     }
 

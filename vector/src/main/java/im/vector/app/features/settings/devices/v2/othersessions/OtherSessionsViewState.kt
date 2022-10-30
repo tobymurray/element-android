@@ -25,4 +25,9 @@ import im.vector.app.features.settings.devices.v2.filter.DeviceManagerFilterType
 data class OtherSessionsViewState(
         val devices: Async<List<DeviceFullInfo>> = Uninitialized,
         val currentFilter: DeviceManagerFilterType = DeviceManagerFilterType.ALL_SESSIONS,
-) : MavericksState
+        val excludeCurrentDevice: Boolean = false,
+        val isSelectModeEnabled: Boolean = false,
+) : MavericksState {
+
+    constructor(args: OtherSessionsArgs) : this(excludeCurrentDevice = args.excludeCurrentDevice)
+}

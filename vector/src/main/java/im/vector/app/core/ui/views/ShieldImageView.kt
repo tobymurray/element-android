@@ -24,6 +24,7 @@ import androidx.core.view.isVisible
 import im.vector.app.R
 import im.vector.app.features.home.room.detail.timeline.item.E2EDecoration
 import org.matrix.android.sdk.api.session.crypto.model.RoomEncryptionTrustLevel
+import org.matrix.android.sdk.api.session.crypto.model.UserVerificationLevel
 
 class ShieldImageView @JvmOverloads constructor(
         context: Context,
@@ -44,8 +45,8 @@ class ShieldImageView @JvmOverloads constructor(
             RoomEncryptionTrustLevel.Default -> {
                 contentDescription = context.getString(R.string.a11y_trust_level_default)
                 setImageResource(
-                        if (borderLess) R.drawable.ic_shield_black_no_border
-                        else R.drawable.ic_shield_black
+                        if (borderLess) R.drawable.ic_shield_unknown_no_border
+                        else R.drawable.ic_shield_unknown
                 )
             }
             RoomEncryptionTrustLevel.Warning -> {
@@ -102,12 +103,41 @@ class ShieldImageView @JvmOverloads constructor(
             }
         }
     }
+
+    fun renderUser(userVerificationLevel: UserVerificationLevel?, borderLess: Boolean = false) {
+        isVisible = userVerificationLevel != null
+        when (userVerificationLevel) {
+            UserVerificationLevel.VERIFIED_ALL_DEVICES_TRUSTED -> {
+                contentDescription = context.getString(R.string.a11y_trust_level_trusted)
+                setImageResource(
+                        if (borderLess) R.drawable.ic_shield_trusted_no_border
+                        else R.drawable.ic_shield_trusted
+                )
+            }
+            UserVerificationLevel.UNVERIFIED_BUT_WAS_PREVIOUSLY,
+            UserVerificationLevel.VERIFIED_WITH_DEVICES_UNTRUSTED -> {
+                contentDescription = context.getString(R.string.a11y_trust_level_warning)
+                setImageResource(
+                        if (borderLess) R.drawable.ic_shield_warning_no_border
+                        else R.drawable.ic_shield_warning
+                )
+            }
+            UserVerificationLevel.WAS_NEVER_VERIFIED -> {
+                contentDescription = context.getString(R.string.a11y_trust_level_default)
+                setImageResource(
+                        if (borderLess) R.drawable.ic_shield_black_no_border
+                        else R.drawable.ic_shield_black
+                )
+            }
+            null -> Unit
+        }
+    }
 }
 
 @DrawableRes
 fun RoomEncryptionTrustLevel.toDrawableRes(): Int {
     return when (this) {
-        RoomEncryptionTrustLevel.Default -> R.drawable.ic_shield_black
+        RoomEncryptionTrustLevel.Default -> R.drawable.ic_shield_unknown
         RoomEncryptionTrustLevel.Warning -> R.drawable.ic_shield_warning
         RoomEncryptionTrustLevel.Trusted -> R.drawable.ic_shield_trusted
         RoomEncryptionTrustLevel.E2EWithUnsupportedAlgorithm -> R.drawable.ic_warning_badge

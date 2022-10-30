@@ -16,6 +16,7 @@
 
 package im.vector.app.features.settings.devices.v2.list
 
+import android.view.View
 import com.airbnb.epoxy.TypedEpoxyController
 import im.vector.app.R
 import im.vector.app.core.date.DateFormatKind
@@ -38,6 +39,7 @@ class OtherSessionsController @Inject constructor(
     var callback: Callback? = null
 
     interface Callback {
+        fun onItemLongClicked(deviceId: String)
         fun onItemClicked(deviceId: String)
     }
 
@@ -53,31 +55,58 @@ class OtherSessionsController @Inject constructor(
             data.forEach { device ->
                 val dateFormatKind = if (device.isInactive) DateFormatKind.TIMELINE_DAY_DIVIDER else DateFormatKind.DEFAULT_DATE_AND_TIME
                 val formattedLastActivityDate = host.dateFormatter.format(device.deviceInfo.lastSeenTs, dateFormatKind)
-                val description = if (device.isInactive) {
-                    stringProvider.getQuantityString(
-                            R.plurals.device_manager_other_sessions_description_inactive,
-                            SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS,
-                            SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS,
-                            formattedLastActivityDate
-                    )
-                } else if (device.roomEncryptionTrustLevel == RoomEncryptionTrustLevel.Trusted) {
-                    stringProvider.getString(R.string.device_manager_other_sessions_description_verified, formattedLastActivityDate)
+                val description = buildDescription(device, formattedLastActivityDate)
+                val descriptionColor = if (device.isCurrentDevice) {
+                    host.colorProvider.getColorFromAttribute(R.attr.colorError)
                 } else {
-                    stringProvider.getString(R.string.device_manager_other_sessions_description_unverified, formattedLastActivityDate)
+                    host.colorProvider.getColorFromAttribute(R.attr.vctr_content_secondary)
                 }
-                val drawableColor = colorProvider.getColorFromAttribute(R.attr.vctr_content_secondary)
-                val descriptionDrawable = if (device.isInactive) drawableProvider.getDrawable(R.drawable.ic_inactive_sessions, drawableColor) else null
+                val drawableColor = host.colorProvider.getColorFromAttribute(R.attr.vctr_content_secondary)
+                val descriptionDrawable = if (device.isInactive) host.drawableProvider.getDrawable(R.drawable.ic_inactive_sessions, drawableColor) else null
 
                 otherSessionItem {
                     id(device.deviceInfo.deviceId)
-                    deviceType(DeviceType.UNKNOWN) // TODO. We don't have this info yet. Update accordingly.
+                    deviceType(device.deviceExtendedInfo.deviceType)
                     roomEncryptionTrustLevel(device.roomEncryptionTrustLevel)
                     sessionName(device.deviceInfo.displayName)
                     sessionDescription(description)
                     sessionDescriptionDrawable(descriptionDrawable)
-                    stringProvider(this@OtherSessionsController.stringProvider)
+                    sessionDescriptionColor(descriptionColor)
+                    stringProvider(host.stringProvider)
+                    colorProvider(host.colorProvider)
+                    drawableProvider(host.drawableProvider)
+                    selected(device.isSelected)
                     clickListener { device.deviceInfo.deviceId?.let { host.callback?.onItemClicked(it) } }
+                    onLongClickListener(View.OnLongClickListener {
+                        device.deviceInfo.deviceId?.let { host.callback?.onItemLongClicked(it) }
+                        true
+                    })
                 }
+            }
+        }
+    }
+
+    private fun buildDescription(device: DeviceFullInfo, formattedLastActivityDate: String): String {
+        return when {
+            device.isInactive -> {
+                stringProvider.getQuantityString(
+                        R.plurals.device_manager_other_sessions_description_inactive,
+                        SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS,
+                        SESSION_IS_MARKED_AS_INACTIVE_AFTER_DAYS,
+                        formattedLastActivityDate
+                )
+            }
+            device.roomEncryptionTrustLevel == RoomEncryptionTrustLevel.Trusted -> {
+                stringProvider.getString(R.string.device_manager_other_sessions_description_verified, formattedLastActivityDate)
+            }
+            device.isCurrentDevice -> {
+                stringProvider.getString(R.string.device_manager_other_sessions_description_unverified_current_session)
+            }
+            device.roomEncryptionTrustLevel == RoomEncryptionTrustLevel.Default -> {
+                stringProvider.getString(R.string.device_manager_session_last_activity, formattedLastActivityDate)
+            }
+            else -> {
+                stringProvider.getString(R.string.device_manager_other_sessions_description_unverified, formattedLastActivityDate)
             }
         }
     }

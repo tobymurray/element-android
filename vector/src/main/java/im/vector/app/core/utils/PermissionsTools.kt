@@ -48,6 +48,7 @@ val PERMISSIONS_FOR_P2P = listOf(Manifest.permission.BLUETOOTH_ADMIN,
         Manifest.permission.BLUETOOTH_ADVERTISE,
         Manifest.permission.ACCESS_COARSE_LOCATION,
         Manifest.permission.ACCESS_FINE_LOCATION)
+val PERMISSIONS_FOR_VOICE_BROADCAST = listOf(Manifest.permission.RECORD_AUDIO)
 
 // This is not ideal to store the value like that, but it works
 private var permissionDialogDisplayed = false

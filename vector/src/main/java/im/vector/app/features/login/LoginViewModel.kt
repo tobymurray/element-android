@@ -35,10 +35,10 @@ import im.vector.app.R
 import im.vector.app.core.di.ActiveSessionHolder
 import im.vector.app.core.di.MavericksAssistedViewModelFactory
 import im.vector.app.core.di.hiltMavericksViewModelFactory
-import im.vector.app.core.extensions.configureAndStart
 import im.vector.app.core.platform.VectorViewModel
 import im.vector.app.core.resources.StringProvider
 import im.vector.app.core.services.DendriteService
+import im.vector.app.core.session.ConfigureAndStartSessionUseCase
 import im.vector.app.core.utils.ensureTrailingSlash
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -71,7 +71,8 @@ class LoginViewModel @AssistedInject constructor(
         private val homeServerConnectionConfigFactory: HomeServerConnectionConfigFactory,
         private val reAuthHelper: ReAuthHelper,
         private val stringProvider: StringProvider,
-        private val homeServerHistoryService: HomeServerHistoryService
+        private val homeServerHistoryService: HomeServerHistoryService,
+        private val configureAndStartSessionUseCase: ConfigureAndStartSessionUseCase,
 ) : VectorViewModel<LoginViewState, LoginAction, LoginViewEvents>(initialState) {
 
     @AssistedFactory
@@ -787,7 +788,7 @@ class LoginViewModel @AssistedInject constructor(
         activeSessionHolder.setActiveSession(session)
 
         authenticationService.reset()
-        session.configureAndStart(applicationContext)
+        configureAndStartSessionUseCase.execute(session)
         setState {
             copy(
                     asyncLoginAction = Success(Unit)
