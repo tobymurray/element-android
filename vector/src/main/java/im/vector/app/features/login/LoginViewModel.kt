@@ -42,7 +42,6 @@ import im.vector.app.core.services.DendriteService
 import im.vector.app.core.utils.ensureTrailingSlash
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import org.matrix.android.sdk.api.MatrixCallback
 import org.matrix.android.sdk.api.MatrixPatterns.getServerName
 import org.matrix.android.sdk.api.auth.AuthenticationService
 import org.matrix.android.sdk.api.auth.HomeServerHistoryService

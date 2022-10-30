@@ -20,7 +20,6 @@ import android.content.Context
 import androidx.annotation.CallSuper
 import androidx.work.CoroutineWorker
 import androidx.work.Data
-import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.squareup.moshi.JsonClass
 import org.matrix.android.sdk.internal.SessionManager

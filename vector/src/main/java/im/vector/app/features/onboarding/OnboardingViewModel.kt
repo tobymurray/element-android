@@ -22,7 +22,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.widget.Toast
-import com.airbnb.mvrx.Fail
 import com.airbnb.mvrx.MavericksViewModelFactory
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
