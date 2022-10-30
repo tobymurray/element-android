@@ -457,7 +457,7 @@ class HomeActivityViewModel @AssistedInject constructor(
                         // Check this is not an SSO account
                         if (session.homeServerCapabilitiesService().getHomeServerCapabilities().canChangePassword) {
                             // Ask password to the user: Upgrade security
-                            _viewEvents.post(HomeActivityViewEvents.AskPasswordToInitCrossSigning(session.getUserOrDefault(session.myUserId).toMatrixItem()))
+                            // TODO: _viewEvents.post(HomeActivityViewEvents.AskPasswordToInitCrossSigning(session.getUserOrDefault(session.myUserId).toMatrixItem()))
                         }
                         // Else (SSO) just ignore for the moment
                     } else {

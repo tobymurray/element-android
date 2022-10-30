@@ -71,6 +71,11 @@ allprojects {
     apply plugin: "io.gitlab.arturbosch.detekt"
 
     repositories {
+        // For dendrite/gobind
+        flatDir {
+            dirs 'libs/'
+        }
+
         // Do not use `mavenCentral()`, it prevents Dependabot from working properly
         maven {
             url 'https://repo1.maven.org/maven2'

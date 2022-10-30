@@ -41,7 +41,6 @@ abstract class NoticeItem : BaseEventItem<NoticeItem.Holder>(R.layout.item_timel
         attributes.avatarRenderer.render(attributes.informationData.matrixItem, holder.avatarImageView)
         holder.view.setOnLongClickListener(attributes.itemLongClickListener)
         holder.avatarImageView.onClick(attributes.avatarClickListener)
-
         holder.e2EDecorationView.renderE2EDecoration(attributes.informationData.e2eDecoration)
     }
 

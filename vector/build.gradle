@@ -72,6 +72,23 @@ android {
                 testCoverageEnabled = coverage.enableTestCoverage
             }
         }
+        nightly {
+            initWith release
+            matchingFallbacks = ['release']
+        }
+        release
+    }
+
+    flavorDimensions "store"
+
+    productFlavors {
+        gplay {
+            dimension "store"
+        }
+
+        fdroid {
+            dimension "store"
+        }
     }
 
     compileOptions {
@@ -100,6 +117,10 @@ android {
         test {
             java.srcDirs += "src/sharedTest/java"
         }
+        // Add sourceSets for `release` version when building `nightly`
+        nightly {
+            java.srcDirs += "src/release/java"
+        }
     }
 
     buildFeatures {
@@ -107,6 +128,8 @@ android {
     }
 }
 dependencies {
+    implementation files("libs/gobind-sources.jar")
+    api(name: 'gobind', ext: 'aar')
 
     implementation project(":vector-config")
     api project(":matrix-sdk-android")
@@ -170,6 +193,10 @@ dependencies {
 
     // Snap Helper https://github.com/rubensousa/GravitySnapHelper
     api 'com.github.rubensousa:gravitysnaphelper:2.2.2'
+
+    // Nightly
+    // API-only library
+    gplayImplementation libs.google.appdistributionApi
 
     // Work
     api libs.androidx.work

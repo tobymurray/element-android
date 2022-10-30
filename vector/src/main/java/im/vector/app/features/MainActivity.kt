@@ -17,9 +17,12 @@
 package im.vector.app.features
 
 import android.app.Activity
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Bundle
+import android.os.IBinder
 import android.os.Parcelable
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
@@ -33,6 +36,7 @@ import im.vector.app.R
 import im.vector.app.core.extensions.startSyncing
 import im.vector.app.core.extensions.vectorStore
 import im.vector.app.core.platform.VectorBaseActivity
+import im.vector.app.core.services.DendriteService
 import im.vector.app.core.utils.deleteAllFiles
 import im.vector.app.databinding.ActivityMainBinding
 import im.vector.app.features.analytics.VectorAnalytics
@@ -136,6 +140,18 @@ class MainActivity : VectorBaseActivity<ActivityMainBinding>(), UnlockedActivity
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        Timber.i("Start Dendrite service")
+        val dendriteConnection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) { }
+            override fun onServiceDisconnected(name: ComponentName?) { }
+        }
+        Intent(this, DendriteService::class.java).also { dendriteIntent ->
+            dendriteIntent.putExtra(DendriteService.ACTION, DendriteService.ACTION_START)
+            startService(dendriteIntent)
+        }.also { intent ->
+            applicationContext.bindService(intent, dendriteConnection, Context.BIND_AUTO_CREATE)
+        }
 
         shortcutsHandler.updateShortcutsWithPreviousIntent()
 
